@@ -1,0 +1,23 @@
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/**/*.py[cod]
+backend/.pytest_cache/
+backend/*.db
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
