@@ -19,6 +19,10 @@ import {
   hasActiveRelationship,
   createRelationship,
   updateRelationshipStatus,
+  getTherapySessions,
+  findTherapySessionById,
+  createTherapySession,
+  updateTherapySession,
 } from './db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'mental-health-secure-secret-key-2026';
@@ -64,6 +68,47 @@ function verifyAccessToken(token) {
   } catch {
     return null;
   }
+}
+
+function formatSessionForPatient(session) {
+  const therapist = findUserById(session.therapist_id);
+  return {
+    id: session.id,
+    patient_id: session.patient_id,
+    therapist_id: session.therapist_id,
+    therapist: therapist ? { id: therapist.id, name: therapist.name, email: therapist.email } : null,
+    scheduled_at: session.scheduled_at,
+    duration: session.duration,
+    session_type: session.session_type,
+    status: session.status,
+    meeting_link: session.meeting_link,
+    patient_notes: session.patient_notes,
+    session_summary: session.session_summary,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
+  };
+}
+
+function formatSessionForTherapist(session) {
+  const patient = findUserById(session.patient_id);
+  return {
+    id: session.id,
+    patient_id: session.patient_id,
+    therapist_id: session.therapist_id,
+    patient: patient ? { id: patient.id, name: patient.name, email: patient.email } : null,
+    scheduled_at: session.scheduled_at,
+    duration: session.duration,
+    session_type: session.session_type,
+    status: session.status,
+    meeting_link: session.meeting_link,
+    patient_notes: session.patient_notes,
+    therapist_notes: session.therapist_notes,
+    session_summary: session.session_summary,
+    progress_observation: session.progress_observation,
+    follow_up_date: session.follow_up_date,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
+  };
 }
 
 // Initial seed questions matching backend/app/assessment_seed.py
@@ -126,6 +171,8 @@ function readBody(req) {
     req.on('error', reject);
   });
 }
+
+const parseJsonBody = readBody;
 
 function getAuthUser(req) {
   const authHeader = req.headers['authorization'];
@@ -810,10 +857,18 @@ export function createApiMiddleware() {
         };
       });
 
+      const allSessions = getTherapySessions().filter(
+        s => s.therapist_id === user.id && connectedPatientIds.has(s.patient_id)
+      );
+      const requestedSessionsCount = allSessions.filter(s => s.status === 'REQUESTED').length;
+      const upcomingSessionsCount = allSessions.filter(s => s.status === 'SCHEDULED').length;
+
       return sendJson(res, 200, {
         total_connected_patients: connectedRels.length,
         pending_requests_count: pendingRels.length,
         pending_requests: pendingRequests,
+        pending_sessions_count: requestedSessionsCount,
+        upcoming_sessions_count: upcomingSessionsCount,
         recent_activity: recentActivity.slice(0, 10),
       });
     }
@@ -1356,6 +1411,482 @@ export function createApiMiddleware() {
         key_patterns: aiResult?.key_patterns || patterns.key_patterns || [],
         safety_disclaimer: "AI insights are for informational and wellness purposes only and are not a medical diagnosis.",
       });
+    }
+
+    // ==========================================
+    // THERAPY SESSIONS API ENDPOINTS (Phase 9A)
+    // ==========================================
+
+    // 1. Patient requests session
+    if ((pathname === '/api/sessions/request' || pathname === '/api/sessions') && req.method === 'POST') {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'patient') {
+        return sendJson(res, 403, { detail: "Only patients can request therapy sessions." });
+      }
+
+      const body = await parseJsonBody(req);
+      const therapistId = parseInt(body.therapist_id, 10);
+      if (!therapistId || isNaN(therapistId)) {
+        return sendJson(res, 400, { detail: "A valid therapist ID is required." });
+      }
+
+      const therapist = findUserById(therapistId);
+      if (!therapist || therapist.role !== 'therapist') {
+        return sendJson(res, 404, { detail: "Therapist not found." });
+      }
+
+      // CRITICAL AUTHORIZATION: Patient can only request sessions with ACCEPTED connected therapists
+      if (!hasActiveRelationship(user.id, therapistId)) {
+        return sendJson(res, 403, {
+          detail: "You can only request sessions with your connected therapist.",
+        });
+      }
+
+      if (!body.scheduled_at) {
+        return sendJson(res, 400, { detail: "Scheduled date and time are required." });
+      }
+
+      const scheduledDate = new Date(body.scheduled_at);
+      if (isNaN(scheduledDate.getTime())) {
+        return sendJson(res, 400, { detail: "Invalid scheduled date and time format." });
+      }
+
+      const duration = body.duration ? parseInt(body.duration, 10) : 50;
+      const sessionType = body.session_type === 'IN_PERSON' ? 'IN_PERSON' : 'VIRTUAL';
+
+      const newSession = createTherapySession({
+        patient_id: user.id,
+        therapist_id: therapistId,
+        scheduled_at: scheduledDate.toISOString(),
+        duration,
+        session_type: sessionType,
+        status: 'REQUESTED',
+        meeting_link: sessionType === 'VIRTUAL' ? (body.meeting_link || null) : null,
+        patient_notes: body.patient_notes || null,
+      });
+
+      return sendJson(res, 201, {
+        message: "Session request sent.",
+        session: formatSessionForPatient(newSession),
+      });
+    }
+
+    // 2. Patient: list own sessions
+    if (pathname === '/api/patient/sessions' && req.method === 'GET') {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'patient') {
+        return sendJson(res, 403, { detail: "Only patients can view their sessions." });
+      }
+
+      const statusFilter = parsedUrl.searchParams.get('status');
+      let sessions = getTherapySessions().filter(s => s.patient_id === user.id);
+
+      if (statusFilter === 'upcoming') {
+        sessions = sessions.filter(s => s.status === 'SCHEDULED' || s.status === 'REQUESTED');
+        sessions.sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+      } else if (statusFilter === 'completed') {
+        sessions = sessions.filter(s => s.status === 'COMPLETED');
+        sessions.sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+      } else if (statusFilter === 'cancelled') {
+        sessions = sessions.filter(s => s.status === 'CANCELLED' || s.status === 'REJECTED');
+        sessions.sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+      } else {
+        sessions.sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+      }
+
+      return sendJson(res, 200, sessions.map(formatSessionForPatient));
+    }
+
+    // 3. Therapist: list sessions for connected patients
+    if (pathname === '/api/therapist/sessions' && req.method === 'GET') {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'therapist') {
+        return sendJson(res, 403, { detail: "Only therapists can view their practice sessions." });
+      }
+
+      const statusFilter = parsedUrl.searchParams.get('status');
+      const patientIdParam = parsedUrl.searchParams.get('patient_id');
+
+      let sessions = getTherapySessions().filter(s => s.therapist_id === user.id);
+
+      if (patientIdParam) {
+        const pId = parseInt(patientIdParam, 10);
+        sessions = sessions.filter(s => s.patient_id === pId);
+      }
+
+      // STRICT AUTHORIZATION: Therapist can ONLY view sessions of connected patients
+      sessions = sessions.filter(s => hasActiveRelationship(s.patient_id, user.id));
+
+      if (statusFilter === 'requested') {
+        sessions = sessions.filter(s => s.status === 'REQUESTED');
+        sessions.sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+      } else if (statusFilter === 'upcoming') {
+        sessions = sessions.filter(s => s.status === 'SCHEDULED');
+        sessions.sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+      } else if (statusFilter === 'completed') {
+        sessions = sessions.filter(s => s.status === 'COMPLETED');
+        sessions.sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+      } else if (statusFilter === 'cancelled') {
+        sessions = sessions.filter(s => s.status === 'CANCELLED' || s.status === 'REJECTED');
+        sessions.sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+      } else {
+        sessions.sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+      }
+
+      return sendJson(res, 200, sessions.map(formatSessionForTherapist));
+    }
+
+    // 4. Session Details by ID
+    const singleSessionMatch = pathname.match(/^\/api\/sessions\/(\d+)$/);
+    if (singleSessionMatch && req.method === 'GET') {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+
+      const sessionId = parseInt(singleSessionMatch[1], 10);
+      const session = findTherapySessionById(sessionId);
+      if (!session) {
+        return sendJson(res, 404, { detail: "Session not found." });
+      }
+
+      if (user.role === 'patient') {
+        if (session.patient_id !== user.id) {
+          return sendJson(res, 403, { detail: "Access denied. You can only view your own sessions." });
+        }
+        return sendJson(res, 200, formatSessionForPatient(session));
+      } else if (user.role === 'therapist') {
+        if (session.therapist_id !== user.id || !hasActiveRelationship(session.patient_id, user.id)) {
+          return sendJson(res, 403, { detail: "Access denied. You can only view sessions for your connected patients." });
+        }
+        return sendJson(res, 200, formatSessionForTherapist(session));
+      } else {
+        return sendJson(res, 403, { detail: "Unauthorized." });
+      }
+    }
+
+    // 5. Accept Session (Therapist only)
+    const acceptMatch = pathname.match(/^\/api\/sessions\/(\d+)\/accept$/);
+    if (acceptMatch && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')) {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'therapist') {
+        return sendJson(res, 403, { detail: "Only therapists can accept session requests." });
+      }
+
+      const sessionId = parseInt(acceptMatch[1], 10);
+      const session = findTherapySessionById(sessionId);
+      if (!session) {
+        return sendJson(res, 404, { detail: "Session not found." });
+      }
+
+      if (session.therapist_id !== user.id || !hasActiveRelationship(session.patient_id, user.id)) {
+        return sendJson(res, 403, { detail: "Access denied." });
+      }
+
+      const body = await parseJsonBody(req);
+      const updates = { status: 'SCHEDULED' };
+
+      if (body.meeting_link !== undefined) {
+        updates.meeting_link = body.meeting_link ? String(body.meeting_link).trim() : null;
+      }
+      if (body.duration) {
+        updates.duration = parseInt(body.duration, 10);
+      }
+      if (body.scheduled_at) {
+        updates.scheduled_at = body.scheduled_at;
+      }
+
+      const updated = updateTherapySession(sessionId, updates);
+      return sendJson(res, 200, {
+        message: "Session accepted and scheduled.",
+        session: formatSessionForTherapist(updated),
+      });
+    }
+
+    // 6. Reject Session (Therapist only)
+    const rejectMatch = pathname.match(/^\/api\/sessions\/(\d+)\/reject$/);
+    if (rejectMatch && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')) {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'therapist') {
+        return sendJson(res, 403, { detail: "Only therapists can reject session requests." });
+      }
+
+      const sessionId = parseInt(rejectMatch[1], 10);
+      const session = findTherapySessionById(sessionId);
+      if (!session) {
+        return sendJson(res, 404, { detail: "Session not found." });
+      }
+
+      if (session.therapist_id !== user.id || !hasActiveRelationship(session.patient_id, user.id)) {
+        return sendJson(res, 403, { detail: "Access denied." });
+      }
+
+      const updated = updateTherapySession(sessionId, { status: 'REJECTED' });
+      return sendJson(res, 200, {
+        message: "Session request rejected.",
+        session: formatSessionForTherapist(updated),
+      });
+    }
+
+    // 7. Reschedule Session (Therapist or Patient)
+    const rescheduleMatch = pathname.match(/^\/api\/sessions\/(\d+)\/reschedule$/);
+    if (rescheduleMatch && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')) {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+
+      const sessionId = parseInt(rescheduleMatch[1], 10);
+      const session = findTherapySessionById(sessionId);
+      if (!session) {
+        return sendJson(res, 404, { detail: "Session not found." });
+      }
+
+      const isPatient = user.role === 'patient' && session.patient_id === user.id;
+      const isTherapist = user.role === 'therapist' && session.therapist_id === user.id && hasActiveRelationship(session.patient_id, user.id);
+
+      if (!isPatient && !isTherapist) {
+        return sendJson(res, 403, { detail: "Access denied." });
+      }
+
+      const body = await parseJsonBody(req);
+      if (!body.scheduled_at) {
+        return sendJson(res, 400, { detail: "New scheduled date and time is required." });
+      }
+
+      const newDate = new Date(body.scheduled_at);
+      if (isNaN(newDate.getTime())) {
+        return sendJson(res, 400, { detail: "Invalid date format." });
+      }
+
+      const updates = { scheduled_at: newDate.toISOString() };
+      if (user.role === 'therapist' && session.status === 'REQUESTED') {
+        updates.status = 'SCHEDULED';
+      }
+
+      const updated = updateTherapySession(sessionId, updates);
+      return sendJson(res, 200, {
+        message: "Session rescheduled successfully.",
+        session: user.role === 'patient' ? formatSessionForPatient(updated) : formatSessionForTherapist(updated),
+      });
+    }
+
+    // 8. Cancel Session (Therapist or Patient)
+    const cancelMatch = pathname.match(/^\/api\/sessions\/(\d+)\/cancel$/);
+    if (cancelMatch && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')) {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+
+      const sessionId = parseInt(cancelMatch[1], 10);
+      const session = findTherapySessionById(sessionId);
+      if (!session) {
+        return sendJson(res, 404, { detail: "Session not found." });
+      }
+
+      const isPatient = user.role === 'patient' && session.patient_id === user.id;
+      const isTherapist = user.role === 'therapist' && session.therapist_id === user.id && hasActiveRelationship(session.patient_id, user.id);
+
+      if (!isPatient && !isTherapist) {
+        return sendJson(res, 403, { detail: "Access denied." });
+      }
+
+      const updated = updateTherapySession(sessionId, { status: 'CANCELLED' });
+      return sendJson(res, 200, {
+        message: "Session cancelled.",
+        session: user.role === 'patient' ? formatSessionForPatient(updated) : formatSessionForTherapist(updated),
+      });
+    }
+
+    // 9. Complete Session (Therapist only)
+    const completeMatch = pathname.match(/^\/api\/sessions\/(\d+)\/complete$/);
+    if (completeMatch && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')) {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'therapist') {
+        return sendJson(res, 403, { detail: "Only therapists can mark sessions as completed." });
+      }
+
+      const sessionId = parseInt(completeMatch[1], 10);
+      const session = findTherapySessionById(sessionId);
+      if (!session) {
+        return sendJson(res, 404, { detail: "Session not found." });
+      }
+
+      if (session.therapist_id !== user.id || !hasActiveRelationship(session.patient_id, user.id)) {
+        return sendJson(res, 403, { detail: "Access denied." });
+      }
+
+      const body = await parseJsonBody(req);
+      const updates = { status: 'COMPLETED' };
+      if (body.session_summary !== undefined) updates.session_summary = body.session_summary;
+      if (body.therapist_notes !== undefined) updates.therapist_notes = body.therapist_notes;
+      if (body.progress_observation !== undefined) updates.progress_observation = body.progress_observation;
+      if (body.follow_up_date !== undefined) updates.follow_up_date = body.follow_up_date;
+
+      const updated = updateTherapySession(sessionId, updates);
+      return sendJson(res, 200, {
+        message: "Session marked as completed.",
+        session: formatSessionForTherapist(updated),
+      });
+    }
+
+    // 10. Update Session Summary (Therapist only, Patient-visible)
+    const summaryMatch = pathname.match(/^\/api\/sessions\/(\d+)\/summary$/);
+    if (summaryMatch && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')) {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'therapist') {
+        return sendJson(res, 403, { detail: "Only therapists can record session summaries." });
+      }
+
+      const sessionId = parseInt(summaryMatch[1], 10);
+      const session = findTherapySessionById(sessionId);
+      if (!session) {
+        return sendJson(res, 404, { detail: "Session not found." });
+      }
+
+      if (session.therapist_id !== user.id || !hasActiveRelationship(session.patient_id, user.id)) {
+        return sendJson(res, 403, { detail: "Access denied." });
+      }
+
+      const body = await parseJsonBody(req);
+      const updated = updateTherapySession(sessionId, {
+        session_summary: body.session_summary !== undefined ? body.session_summary : session.session_summary,
+      });
+
+      return sendJson(res, 200, {
+        message: "Session summary saved.",
+        session: formatSessionForTherapist(updated),
+      });
+    }
+
+    // 11. Update Therapist Private Notes (Therapist only)
+    const therapistNotesMatch = pathname.match(/^\/api\/sessions\/(\d+)\/therapist-notes$/);
+    if (therapistNotesMatch && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')) {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'therapist') {
+        return sendJson(res, 403, { detail: "Only therapists can manage clinical notes." });
+      }
+
+      const sessionId = parseInt(therapistNotesMatch[1], 10);
+      const session = findTherapySessionById(sessionId);
+      if (!session) {
+        return sendJson(res, 404, { detail: "Session not found." });
+      }
+
+      if (session.therapist_id !== user.id || !hasActiveRelationship(session.patient_id, user.id)) {
+        return sendJson(res, 403, { detail: "Access denied." });
+      }
+
+      const body = await parseJsonBody(req);
+      const updates = {};
+      if (body.therapist_notes !== undefined) updates.therapist_notes = body.therapist_notes;
+      if (body.progress_observation !== undefined) updates.progress_observation = body.progress_observation;
+      if (body.follow_up_date !== undefined) updates.follow_up_date = body.follow_up_date;
+
+      const updated = updateTherapySession(sessionId, updates);
+      return sendJson(res, 200, {
+        message: "Clinical notes updated.",
+        session: formatSessionForTherapist(updated),
+      });
+    }
+
+    // 12. Update Patient Notes (Patient only)
+    const patientNotesMatch = pathname.match(/^\/api\/sessions\/(\d+)\/patient-notes$/);
+    if (patientNotesMatch && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')) {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'patient') {
+        return sendJson(res, 403, { detail: "Only patients can edit patient notes." });
+      }
+
+      const sessionId = parseInt(patientNotesMatch[1], 10);
+      const session = findTherapySessionById(sessionId);
+      if (!session) {
+        return sendJson(res, 404, { detail: "Session not found." });
+      }
+
+      if (session.patient_id !== user.id) {
+        return sendJson(res, 403, { detail: "Access denied." });
+      }
+
+      const body = await parseJsonBody(req);
+      const updated = updateTherapySession(sessionId, {
+        patient_notes: body.patient_notes !== undefined ? body.patient_notes : session.patient_notes,
+      });
+
+      return sendJson(res, 200, {
+        message: "Patient notes saved.",
+        session: formatSessionForPatient(updated),
+      });
+    }
+
+    // 13. General Session Update
+    const generalSessionMatch = pathname.match(/^\/api\/sessions\/(\d+)$/);
+    if (generalSessionMatch && (req.method === 'PUT' || req.method === 'PATCH')) {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+
+      const sessionId = parseInt(generalSessionMatch[1], 10);
+      const session = findTherapySessionById(sessionId);
+      if (!session) {
+        return sendJson(res, 404, { detail: "Session not found." });
+      }
+
+      const body = await parseJsonBody(req);
+      const updates = {};
+
+      if (user.role === 'patient') {
+        if (session.patient_id !== user.id) {
+          return sendJson(res, 403, { detail: "Access denied." });
+        }
+        if (body.patient_notes !== undefined) updates.patient_notes = body.patient_notes;
+        const updated = updateTherapySession(sessionId, updates);
+        return sendJson(res, 200, formatSessionForPatient(updated));
+      } else if (user.role === 'therapist') {
+        if (session.therapist_id !== user.id || !hasActiveRelationship(session.patient_id, user.id)) {
+          return sendJson(res, 403, { detail: "Access denied." });
+        }
+        if (body.meeting_link !== undefined) updates.meeting_link = body.meeting_link;
+        if (body.duration !== undefined) updates.duration = body.duration;
+        if (body.status !== undefined) updates.status = body.status;
+        if (body.session_summary !== undefined) updates.session_summary = body.session_summary;
+        if (body.therapist_notes !== undefined) updates.therapist_notes = body.therapist_notes;
+        if (body.progress_observation !== undefined) updates.progress_observation = body.progress_observation;
+        if (body.follow_up_date !== undefined) updates.follow_up_date = body.follow_up_date;
+        const updated = updateTherapySession(sessionId, updates);
+        return sendJson(res, 200, formatSessionForTherapist(updated));
+      } else {
+        return sendJson(res, 403, { detail: "Unauthorized." });
+      }
     }
 
     // Not an API route -> pass to next middleware

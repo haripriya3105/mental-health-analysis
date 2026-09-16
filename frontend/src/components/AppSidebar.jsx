@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 
 const navigation = {
   patient: ['Dashboard', 'Profile', 'Assessment', 'Mood Tracker', 'Symptoms', 'Journal', 'AI Insights', 'Recommendations', 'Progress Reports', 'Therapy', 'Notifications'],
-  therapist: ['Dashboard', 'Profile', 'Patients', 'Reports', 'Recommendations', 'Therapy Notes', 'Notifications'],
+  therapist: ['Dashboard', 'Profile', 'Patients', 'Sessions', 'Reports', 'Recommendations', 'Therapy Notes', 'Notifications'],
 }
 
 const toPath = (label) => label === 'Dashboard' ? '' : `/${label.toLowerCase().replaceAll(' ', '-')}`

@@ -39,6 +39,14 @@
       "password_hash": "9c017181ada6674c22bdfa7384eb9493:8b74a8c5a99c4abf12ce56e0f0c1d25b020e0a70dee7552c6639bf0cd66b9cf6668d085512bf420513fe1f1e69cf297f9fa703f660cb8101070675eaaaabf5db",
       "role": "patient",
       "created_at": "2026-09-16T14:54:38.389Z"
+    },
+    {
+      "id": 6,
+      "name": "HARI PRIYA S",
+      "email": "hari3105@gmail.com",
+      "password_hash": "b36648151e0bb4f5dacae325e91932ad:6cc9f22746a448e56a8734709782f5dda12f0bdbac36b760a9088e3b491287384e7d62d1a538b2880d067b6e131150c43d6932789569290f01e5d3ec57b2bf6d",
+      "role": "patient",
+      "created_at": "2026-09-16T15:26:33.153Z"
     }
   ],
   "assessments": [
@@ -149,11 +157,12 @@
     }
   ],
   "counters": {
-    "nextUserId": 6,
+    "nextUserId": 7,
     "nextAssessmentId": 3,
     "nextMoodId": 8,
     "nextSymptomId": 3,
-    "nextRelationshipId": 2
+    "nextRelationshipId": 2,
+    "nextSessionId": 5
   },
   "therapistRelationships": [
     {
@@ -163,6 +172,76 @@
       "status": "ACCEPTED",
       "created_at": "2026-09-16T14:44:48.716Z",
       "updated_at": "2026-09-16T14:44:48.725Z"
+    }
+  ],
+  "therapySessions": [
+    {
+      "id": 1,
+      "patient_id": 1,
+      "therapist_id": 2,
+      "scheduled_at": "2026-09-18T19:38:43.430Z",
+      "duration": 50,
+      "session_type": "VIRTUAL",
+      "status": "SCHEDULED",
+      "meeting_link": "https://meet.google.com/abc-defg-hij",
+      "patient_notes": "Follow up on cognitive reframing and coping strategies for work stress.",
+      "therapist_notes": "Check progress on thought record exercises. Review sleep hygiene.",
+      "session_summary": null,
+      "progress_observation": "Patient has maintained consistent daily check-ins.",
+      "follow_up_date": null,
+      "created_at": "2026-09-14T15:38:43.430Z",
+      "updated_at": "2026-09-15T15:38:43.430Z"
+    },
+    {
+      "id": 2,
+      "patient_id": 1,
+      "therapist_id": 2,
+      "scheduled_at": "2026-09-10T15:38:43.430Z",
+      "duration": 50,
+      "session_type": "VIRTUAL",
+      "status": "COMPLETED",
+      "meeting_link": "https://meet.google.com/abc-defg-hij",
+      "patient_notes": "Intake and goal-setting session.",
+      "therapist_notes": "Patient was responsive and articulated specific goals regarding stress management.",
+      "session_summary": "Reviewed baseline assessments. Established goals for stress management and daily mindfulness routines.",
+      "progress_observation": "Good baseline awareness of stressors.",
+      "follow_up_date": "2026-09-18",
+      "created_at": "2026-09-08T15:38:43.430Z",
+      "updated_at": "2026-09-10T15:38:43.430Z"
+    },
+    {
+      "id": 3,
+      "patient_id": 1,
+      "therapist_id": 2,
+      "scheduled_at": "2026-09-17T15:38:43.431Z",
+      "duration": 50,
+      "session_type": "VIRTUAL",
+      "status": "SCHEDULED",
+      "meeting_link": "https://meet.google.com/abc-def-ghi",
+      "patient_notes": "Need guidance on stress management.",
+      "therapist_notes": "Private observation notes - strictly confidential",
+      "session_summary": null,
+      "progress_observation": null,
+      "follow_up_date": null,
+      "created_at": "2026-09-16T15:38:43.431Z",
+      "updated_at": "2026-09-16T15:38:43.432Z"
+    },
+    {
+      "id": 4,
+      "patient_id": 1,
+      "therapist_id": 2,
+      "scheduled_at": "2026-09-18T23:14:31.245Z",
+      "duration": 50,
+      "session_type": "VIRTUAL",
+      "status": "COMPLETED",
+      "meeting_link": "https://meet.google.com/test-room-123",
+      "patient_notes": "Remember to practice diaphragmatic breathing before sleep.",
+      "therapist_notes": "CONFIDENTIAL: Patient showing improved affective control.",
+      "session_summary": "Completed session successfully.",
+      "progress_observation": "Goal progress rating: 8/10",
+      "follow_up_date": "2026-10-01",
+      "created_at": "2026-09-16T15:41:11.237Z",
+      "updated_at": "2026-09-16T15:41:11.246Z"
     }
   ]
 }

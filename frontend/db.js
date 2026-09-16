@@ -112,6 +112,43 @@ function createInitialSeedData() {
     },
   ];
 
+  const demoSessions = [
+    {
+      id: 1,
+      patient_id: demoPatient.id,
+      therapist_id: demoTherapist.id,
+      scheduled_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000).toISOString(),
+      duration: 50,
+      session_type: 'VIRTUAL',
+      status: 'SCHEDULED',
+      meeting_link: 'https://meet.google.com/abc-defg-hij',
+      patient_notes: 'Follow up on cognitive reframing and coping strategies for work stress.',
+      therapist_notes: 'Check progress on thought record exercises. Review sleep hygiene.',
+      session_summary: null,
+      progress_observation: 'Patient has maintained consistent daily check-ins.',
+      follow_up_date: null,
+      created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+    {
+      id: 2,
+      patient_id: demoPatient.id,
+      therapist_id: demoTherapist.id,
+      scheduled_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+      duration: 50,
+      session_type: 'VIRTUAL',
+      status: 'COMPLETED',
+      meeting_link: 'https://meet.google.com/abc-defg-hij',
+      patient_notes: 'Intake and goal-setting session.',
+      therapist_notes: 'Patient was responsive and articulated specific goals regarding stress management.',
+      session_summary: 'Reviewed baseline assessments. Established goals for stress management and daily mindfulness routines.',
+      progress_observation: 'Good baseline awareness of stressors.',
+      follow_up_date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      created_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+  ];
+
   return {
     users: [demoPatient, demoTherapist],
     assessments,
@@ -119,12 +156,14 @@ function createInitialSeedData() {
     moodEntries,
     symptomEntries,
     therapistRelationships: [],
+    therapySessions: demoSessions,
     counters: {
       nextUserId: 3,
       nextAssessmentId: 3,
       nextMoodId: moodEntries.length + 1,
       nextSymptomId: symptomEntries.length + 1,
       nextRelationshipId: 1,
+      nextSessionId: 3,
     },
   };
 }
@@ -160,6 +199,47 @@ export function getDb() {
         }
         if (!parsed.counters.nextRelationshipId) {
           parsed.counters.nextRelationshipId = 1;
+        }
+        if (!Array.isArray(parsed.therapySessions)) {
+          parsed.therapySessions = [
+            {
+              id: 1,
+              patient_id: 1,
+              therapist_id: 2,
+              scheduled_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000).toISOString(),
+              duration: 50,
+              session_type: 'VIRTUAL',
+              status: 'SCHEDULED',
+              meeting_link: 'https://meet.google.com/abc-defg-hij',
+              patient_notes: 'Follow up on cognitive reframing and coping strategies for work stress.',
+              therapist_notes: 'Check progress on thought record exercises. Review sleep hygiene.',
+              session_summary: null,
+              progress_observation: 'Patient has maintained consistent daily check-ins.',
+              follow_up_date: null,
+              created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+              updated_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+            },
+            {
+              id: 2,
+              patient_id: 1,
+              therapist_id: 2,
+              scheduled_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+              duration: 50,
+              session_type: 'VIRTUAL',
+              status: 'COMPLETED',
+              meeting_link: 'https://meet.google.com/abc-defg-hij',
+              patient_notes: 'Intake and goal-setting session.',
+              therapist_notes: 'Patient was responsive and articulated specific goals regarding stress management.',
+              session_summary: 'Reviewed baseline assessments. Established goals for stress management and daily mindfulness routines.',
+              progress_observation: 'Good baseline awareness of stressors.',
+              follow_up_date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+              created_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+              updated_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+            },
+          ];
+        }
+        if (!parsed.counters.nextSessionId) {
+          parsed.counters.nextSessionId = (parsed.therapySessions.length || 0) + 1;
         }
         dbMemoryCache = parsed;
         return dbMemoryCache;
@@ -291,3 +371,99 @@ export function updateRelationshipStatus(id, newStatus) {
   persistDb();
   return rel;
 }
+
+// Helper methods for Therapy Sessions
+export function getTherapySessions() {
+  const db = getDb();
+  return db.therapySessions || [];
+}
+
+export function findTherapySessionById(id) {
+  const db = getDb();
+  const numId = typeof id === 'number' ? id : parseInt(id, 10);
+  if (isNaN(numId)) return null;
+  return (db.therapySessions || []).find(s => s.id === numId) || null;
+}
+
+export function createTherapySession({
+  patient_id,
+  therapist_id,
+  scheduled_at,
+  duration = 50,
+  session_type = 'VIRTUAL',
+  status = 'REQUESTED',
+  meeting_link = null,
+  patient_notes = null,
+  therapist_notes = null,
+  session_summary = null,
+  progress_observation = null,
+  follow_up_date = null,
+}) {
+  const db = getDb();
+  if (!Array.isArray(db.therapySessions)) {
+    db.therapySessions = [];
+  }
+  if (!db.counters.nextSessionId) {
+    db.counters.nextSessionId = 1;
+  }
+
+  const pId = typeof patient_id === 'number' ? patient_id : parseInt(patient_id, 10);
+  const tId = typeof therapist_id === 'number' ? therapist_id : parseInt(therapist_id, 10);
+
+  const newSession = {
+    id: db.counters.nextSessionId++,
+    patient_id: pId,
+    therapist_id: tId,
+    scheduled_at: new Date(scheduled_at).toISOString(),
+    duration: typeof duration === 'number' ? duration : (parseInt(duration, 10) || 50),
+    session_type: session_type === 'IN_PERSON' ? 'IN_PERSON' : 'VIRTUAL',
+    status: status || 'REQUESTED',
+    meeting_link: meeting_link ? String(meeting_link).trim() : null,
+    patient_notes: patient_notes ? String(patient_notes).trim() : null,
+    therapist_notes: therapist_notes ? String(therapist_notes).trim() : null,
+    session_summary: session_summary ? String(session_summary).trim() : null,
+    progress_observation: progress_observation ? String(progress_observation).trim() : null,
+    follow_up_date: follow_up_date ? String(follow_up_date).trim() : null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  db.therapySessions.push(newSession);
+  persistDb();
+  return newSession;
+}
+
+export function updateTherapySession(id, updates) {
+  const session = findTherapySessionById(id);
+  if (!session) return null;
+
+  const allowedFields = [
+    'scheduled_at',
+    'duration',
+    'session_type',
+    'status',
+    'meeting_link',
+    'patient_notes',
+    'therapist_notes',
+    'session_summary',
+    'progress_observation',
+    'follow_up_date',
+  ];
+
+  for (const field of allowedFields) {
+    if (updates[field] !== undefined) {
+      if (field === 'scheduled_at') {
+        session.scheduled_at = new Date(updates.scheduled_at).toISOString();
+      } else if (field === 'duration') {
+        session.duration = parseInt(updates.duration, 10) || session.duration;
+      } else {
+        session[field] = updates[field];
+      }
+    }
+  }
+
+  session.updated_at = new Date().toISOString();
+  persistDb();
+  return session;
+}
+

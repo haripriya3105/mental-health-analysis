@@ -22,6 +22,7 @@ import TherapistPatientsPage from './TherapistPatientsPage.jsx'
 import PatientProgressPage from './PatientProgressPage.jsx'
 import PatientProgressReportsPage from './PatientProgressReportsPage.jsx'
 import TherapistReportsPage from './TherapistReportsPage.jsx'
+import TherapistSessionsPage from './TherapistSessionsPage.jsx'
 
 const patientActions = [
   'Daily Check-in',
@@ -60,7 +61,7 @@ function PlaceholderChart({ title, message }) {
   )
 }
 
-function QuickActions({ actions, onAssessment, onCheckIn, onInsights, onViewPatients, onViewReports }) {
+function QuickActions({ actions, onAssessment, onCheckIn, onInsights, onViewPatients, onViewReports, onTherapyNotes }) {
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -145,6 +146,22 @@ function QuickActions({ actions, onAssessment, onCheckIn, onInsights, onViewPati
               >
                 <span className="action-icon" aria-hidden="true">
                   📊
+                </span>
+                <span>{action}</span>
+                <small>Available now</small>
+              </button>
+            )
+          }
+          if (action === 'Add Therapy Note') {
+            return (
+              <button
+                id="action-therapy-notes"
+                className="action-card enabled-action"
+                key={action}
+                onClick={onTherapyNotes}
+              >
+                <span className="action-icon" aria-hidden="true">
+                  📝
                 </span>
                 <span>{action}</span>
                 <small>Available now</small>
@@ -695,20 +712,28 @@ function TherapistDashboard() {
         actions={therapistActions}
         onViewPatients={() => navigate('/therapist/patients')}
         onViewReports={() => navigate('/therapist/reports')}
+        onTherapyNotes={() => navigate('/therapist/therapy-notes')}
       />
 
       {/* Patient Progress & Reports Section */}
       <section className="panel" style={{ marginBottom: 20 }}>
         <div className="panel-heading">
           <div>
-            <h2>Patient Progress & Reports</h2>
-            <p>Access longitudinal clinical analytics, trend signals, and verified patient directories.</p>
+            <h2>Practice Management & Clinical Sessions</h2>
+            <p>Manage appointments, record clinical progress notes, and access longitudinal patient analytics.</p>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <button
-            id="therapist-nav-my-patients-btn"
+            id="therapist-nav-sessions-btn"
             className="primary-button compact-button"
+            onClick={() => navigate('/therapist/sessions')}
+          >
+            📅 Sessions & Notes {dashboardData?.pending_sessions_count > 0 ? `(${dashboardData.pending_sessions_count} Requests)` : ''}
+          </button>
+          <button
+            id="therapist-nav-my-patients-btn"
+            className="secondary-button compact-button"
             onClick={() => navigate('/therapist/patients')}
           >
             👥 My Patients Directory
@@ -911,6 +936,11 @@ export default function DashboardPage({ role }) {
     role === 'therapist' &&
     (location.pathname === '/therapist/reports' ||
       location.pathname === '/therapist/progress-reports')
+  const isTherapyNotes =
+    role === 'therapist' &&
+    (location.pathname === '/therapist/therapy-notes' ||
+      location.pathname === '/therapist/sessions' ||
+      location.pathname === '/therapist/therapy')
   const isPatientProgress =
     role === 'therapist' && location.pathname.startsWith('/therapist/patients/')
   const patientProgressId = isPatientProgress
@@ -961,6 +991,8 @@ export default function DashboardPage({ role }) {
             <TherapistPatientsPage />
           ) : isTherapistReports ? (
             <TherapistReportsPage />
+          ) : isTherapyNotes ? (
+            <TherapistSessionsPage />
           ) : isDashboard ? (
             role === 'patient' ? (
               <PatientDashboard />
