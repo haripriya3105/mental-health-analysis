@@ -5,6 +5,7 @@ import {
   calculateTrendSignals,
   calculateSymptomTrend,
   calculateEmotionalDistribution,
+  checkCrisisSafety,
 } from './analysisService.js';
 import {
   getDb,
@@ -23,6 +24,13 @@ import {
   findTherapySessionById,
   createTherapySession,
   updateTherapySession,
+  getNotifications,
+  findNotificationById,
+  getUserNotifications,
+  createNotification,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  hasDuplicateNotification,
 } from './db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'mental-health-secure-secret-key-2026';
@@ -109,6 +117,123 @@ function formatSessionForTherapist(session) {
     created_at: session.created_at,
     updated_at: session.updated_at,
   };
+}
+
+function generateUpcomingSessionReminders(user) {
+  if (!user) return;
+  const sessions = getTherapySessions();
+  const now = Date.now();
+  const in48Hours = now + (48 * 60 * 60 * 1000);
+
+  const relevantSessions = sessions.filter(s => {
+    if (s.status !== 'SCHEDULED') return false;
+    const schedTime = new Date(s.scheduled_at).getTime();
+    if (schedTime < now || schedTime > in48Hours) return false;
+    if (user.role === 'patient') return s.patient_id === user.id;
+    if (user.role === 'therapist') return s.therapist_id === user.id;
+    return false;
+  });
+
+  for (const s of relevantSessions) {
+    if (hasDuplicateNotification({ user_id: user.id, type: 'SESSION_REMINDER', related_id: s.id, withinHours: 72 })) {
+      continue;
+    }
+
+    const schedDate = new Date(s.scheduled_at);
+    const dateStr = schedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const timeStr = schedDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+    if (user.role === 'patient') {
+      const therapist = findUserById(s.therapist_id);
+      const therapistName = therapist ? therapist.name : 'your therapist';
+      createNotification({
+        user_id: user.id,
+        type: 'SESSION_REMINDER',
+        title: 'Upcoming Session Reminder',
+        message: `Upcoming session with ${therapistName} on ${dateStr} at ${timeStr}.`,
+        related_id: s.id,
+        related_type: 'session',
+      });
+    } else {
+      const patient = findUserById(s.patient_id);
+      const patientName = patient ? patient.name : 'your patient';
+      createNotification({
+        user_id: user.id,
+        type: 'SESSION_REMINDER',
+        title: 'Upcoming Session Reminder',
+        message: `Upcoming session with ${patientName} on ${dateStr} at ${timeStr}.`,
+        related_id: s.id,
+        related_type: 'session',
+      });
+    }
+  }
+}
+
+function checkAndTriggerTrendAlert(patientId) {
+  const db = getDb();
+  const rels = (db.therapistRelationships || []).filter(
+    r => r.patient_id === patientId && r.status === 'ACCEPTED'
+  );
+  if (!rels || rels.length === 0) return;
+
+  const patient = findUserById(patientId);
+  if (!patient) return;
+
+  const patientMoods = (db.moodEntries || []).filter(m => m.patient_id === patientId);
+  const patientSymptoms = (db.symptomEntries || []).filter(s => s.patient_id === patientId);
+  const patientAssessments = (db.assessments || []).filter(a => a.patient_id === patientId);
+
+  // Require at least 2 check-ins to evaluate trends (never from a single isolated score)
+  if (patientMoods.length < 2) return;
+
+  const analysis = analyzePatterns(patientMoods, patientSymptoms, patientAssessments);
+  const isWorsening =
+    analysis.trend === 'Worsening' ||
+    analysis.mood_direction === 'Worsening' ||
+    analysis.stress_direction === 'Worsening' ||
+    (analysis.average_mood !== null && analysis.average_mood <= 4.0 && analysis.average_stress !== null && analysis.average_stress >= 6.5);
+
+  if (isWorsening) {
+    for (const rel of rels) {
+      const therapistId = rel.therapist_id;
+      if (!hasDuplicateNotification({ user_id: therapistId, type: 'TREND_SIGNAL', related_id: patientId, withinHours: 24 })) {
+        createNotification({
+          user_id: therapistId,
+          type: 'TREND_SIGNAL',
+          title: 'Trend signal',
+          message: "Recent patient check-in data shows a worsening trend. Consider reviewing the patient's recent progress.",
+          related_id: patientId,
+          related_type: 'patient_progress',
+        });
+      }
+    }
+  }
+}
+
+function checkAndTriggerSafetyAlert(patientId, text) {
+  if (!text) return;
+  const safetyDetected = checkCrisisSafety(text);
+  if (!safetyDetected) return;
+
+  const db = getDb();
+  const rels = (db.therapistRelationships || []).filter(
+    r => r.patient_id === patientId && r.status === 'ACCEPTED'
+  );
+  if (!rels || rels.length === 0) return;
+
+  for (const rel of rels) {
+    const therapistId = rel.therapist_id;
+    if (!hasDuplicateNotification({ user_id: therapistId, type: 'SAFETY_SIGNAL', related_id: patientId, withinHours: 12 })) {
+      createNotification({
+        user_id: therapistId,
+        type: 'SAFETY_SIGNAL',
+        title: 'Safety signal',
+        message: "Important safety-related signal detected in a recent patient entry. Please review the patient's latest information.",
+        related_id: patientId,
+        related_type: 'patient_progress',
+      });
+    }
+  }
 }
 
 // Initial seed questions matching backend/app/assessment_seed.py
@@ -371,6 +496,20 @@ export function createApiMiddleware() {
         }
         persistDb();
 
+        try {
+          createNotification({
+            user_id: user.id,
+            type: 'REPORT_AVAILABLE',
+            title: 'New Progress Report Available',
+            message: `A new clinical assessment has been completed (${category}, score: ${totalScore}). Your progress report is ready.`,
+            related_id: assessment.id,
+            related_type: 'report',
+          });
+          checkAndTriggerTrendAlert(user.id);
+        } catch (notifErr) {
+          console.error("Failed to generate notification for assessment:", notifErr);
+        }
+
         return sendJson(res, 201, {
           id: assessment.id,
           total_score: totalScore,
@@ -451,6 +590,15 @@ export function createApiMiddleware() {
         };
         db.moodEntries.push(entry);
         persistDb();
+
+        try {
+          if (entry.notes) {
+            checkAndTriggerSafetyAlert(user.id, entry.notes);
+          }
+          checkAndTriggerTrendAlert(user.id);
+        } catch (notifErr) {
+          console.error("Failed to check notifications on mood entry:", notifErr);
+        }
 
         return sendJson(res, 201, entry);
       } catch {
@@ -558,6 +706,15 @@ export function createApiMiddleware() {
         };
         db.symptomEntries.push(entry);
         persistDb();
+
+        try {
+          if (entry.notes) {
+            checkAndTriggerSafetyAlert(user.id, entry.notes);
+          }
+          checkAndTriggerTrendAlert(user.id);
+        } catch (notifErr) {
+          console.error("Failed to check notifications on symptom entry:", notifErr);
+        }
 
         return sendJson(res, 201, entry);
       } catch {
@@ -689,6 +846,19 @@ export function createApiMiddleware() {
           status: 'PENDING',
         });
 
+        try {
+          createNotification({
+            user_id: therapistId,
+            type: 'THERAPIST_REQUEST',
+            title: 'New Connection Request',
+            message: `${user.name} sent you a connection request.`,
+            related_id: rel.id,
+            related_type: 'therapist_relationship',
+          });
+        } catch (notifErr) {
+          console.error("Failed to create notification for therapist request:", notifErr);
+        }
+
         return sendJson(res, 201, {
           ...rel,
           therapist: { id: therapist.id, name: therapist.name, email: therapist.email },
@@ -790,6 +960,30 @@ export function createApiMiddleware() {
       const newStatus = isAccept ? 'ACCEPTED' : 'REJECTED';
       const updated = updateRelationshipStatus(reqId, newStatus);
       const patient = findUserById(updated.patient_id);
+
+      try {
+        if (isAccept) {
+          createNotification({
+            user_id: updated.patient_id,
+            type: 'THERAPIST_REQUEST_ACCEPTED',
+            title: 'Connection Request Accepted',
+            message: `${user.name} accepted your connection request.`,
+            related_id: updated.id,
+            related_type: 'therapist_relationship',
+          });
+        } else {
+          createNotification({
+            user_id: updated.patient_id,
+            type: 'THERAPIST_REQUEST_REJECTED',
+            title: 'Connection Request Declined',
+            message: `${user.name} declined your connection request.`,
+            related_id: updated.id,
+            related_type: 'therapist_relationship',
+          });
+        }
+      } catch (notifErr) {
+        console.error("Failed to create notification for relationship update:", notifErr);
+      }
 
       return sendJson(res, 200, {
         ...updated,
@@ -1468,6 +1662,25 @@ export function createApiMiddleware() {
         patient_notes: body.patient_notes || null,
       });
 
+      try {
+        const schedFormatted = new Date(newSession.scheduled_at).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+        createNotification({
+          user_id: therapistId,
+          type: 'SESSION_REQUEST',
+          title: 'New Session Request',
+          message: `${user.name} requested a therapy session for ${schedFormatted}.`,
+          related_id: newSession.id,
+          related_type: 'session',
+        });
+      } catch (notifErr) {
+        console.error("Failed to create notification for session request:", notifErr);
+      }
+
       return sendJson(res, 201, {
         message: "Session request sent.",
         session: formatSessionForPatient(newSession),
@@ -1609,6 +1822,26 @@ export function createApiMiddleware() {
       }
 
       const updated = updateTherapySession(sessionId, updates);
+
+      try {
+        const schedFormatted = new Date(updated.scheduled_at).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+        createNotification({
+          user_id: updated.patient_id,
+          type: 'SESSION_ACCEPTED',
+          title: 'Session Confirmed',
+          message: `Your therapy session with ${user.name} has been confirmed for ${schedFormatted}.`,
+          related_id: updated.id,
+          related_type: 'session',
+        });
+      } catch (notifErr) {
+        console.error("Failed to create notification for session accept:", notifErr);
+      }
+
       return sendJson(res, 200, {
         message: "Session accepted and scheduled.",
         session: formatSessionForTherapist(updated),
@@ -1637,6 +1870,26 @@ export function createApiMiddleware() {
       }
 
       const updated = updateTherapySession(sessionId, { status: 'REJECTED' });
+
+      try {
+        const schedFormatted = new Date(session.scheduled_at).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+        createNotification({
+          user_id: session.patient_id,
+          type: 'SESSION_REJECTED',
+          title: 'Session Declined',
+          message: `Your session request for ${schedFormatted} was declined.`,
+          related_id: session.id,
+          related_type: 'session',
+        });
+      } catch (notifErr) {
+        console.error("Failed to create notification for session reject:", notifErr);
+      }
+
       return sendJson(res, 200, {
         message: "Session request rejected.",
         session: formatSessionForTherapist(updated),
@@ -1680,6 +1933,37 @@ export function createApiMiddleware() {
       }
 
       const updated = updateTherapySession(sessionId, updates);
+
+      try {
+        const schedFormatted = new Date(updated.scheduled_at).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+        if (user.role === 'therapist') {
+          createNotification({
+            user_id: updated.patient_id,
+            type: 'SESSION_RESCHEDULED',
+            title: 'Session Rescheduled',
+            message: `Your therapy session with ${user.name} was rescheduled to ${schedFormatted}.`,
+            related_id: updated.id,
+            related_type: 'session',
+          });
+        } else {
+          createNotification({
+            user_id: updated.therapist_id,
+            type: 'SESSION_RESCHEDULED',
+            title: 'Session Rescheduled',
+            message: `${user.name} requested to reschedule the session to ${schedFormatted}.`,
+            related_id: updated.id,
+            related_type: 'session',
+          });
+        }
+      } catch (notifErr) {
+        console.error("Failed to create notification for session reschedule:", notifErr);
+      }
+
       return sendJson(res, 200, {
         message: "Session rescheduled successfully.",
         session: user.role === 'patient' ? formatSessionForPatient(updated) : formatSessionForTherapist(updated),
@@ -1708,6 +1992,37 @@ export function createApiMiddleware() {
       }
 
       const updated = updateTherapySession(sessionId, { status: 'CANCELLED' });
+
+      try {
+        const schedFormatted = new Date(session.scheduled_at).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+        if (user.role === 'patient') {
+          createNotification({
+            user_id: session.therapist_id,
+            type: 'SESSION_CANCELLED',
+            title: 'Session Cancelled',
+            message: `${user.name} cancelled the session scheduled for ${schedFormatted}.`,
+            related_id: session.id,
+            related_type: 'session',
+          });
+        } else {
+          createNotification({
+            user_id: session.patient_id,
+            type: 'SESSION_CANCELLED',
+            title: 'Session Cancelled',
+            message: `Your session with ${user.name} scheduled for ${schedFormatted} was cancelled.`,
+            related_id: session.id,
+            related_type: 'session',
+          });
+        }
+      } catch (notifErr) {
+        console.error("Failed to create notification for session cancel:", notifErr);
+      }
+
       return sendJson(res, 200, {
         message: "Session cancelled.",
         session: user.role === 'patient' ? formatSessionForPatient(updated) : formatSessionForTherapist(updated),
@@ -1887,6 +2202,84 @@ export function createApiMiddleware() {
       } else {
         return sendJson(res, 403, { detail: "Unauthorized." });
       }
+    }
+
+    // ==========================================
+    // Notification Endpoints (Phase 9B)
+    // ==========================================
+
+    // 1. Get current user's notifications
+    if (pathname === '/api/notifications' && req.method === 'GET') {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+
+      // Generate in-app reminders for upcoming sessions
+      try {
+        generateUpcomingSessionReminders(user);
+      } catch (remErr) {
+        console.error("Failed to generate session reminders:", remErr);
+      }
+
+      const notifs = getUserNotifications(user.id);
+      return sendJson(res, 200, notifs);
+    }
+
+    // 2. Get unread notification count
+    if (pathname === '/api/notifications/unread-count' && req.method === 'GET') {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+
+      try {
+        generateUpcomingSessionReminders(user);
+      } catch (remErr) {
+        console.error("Failed to generate session reminders:", remErr);
+      }
+
+      const notifs = getUserNotifications(user.id);
+      const unreadCount = notifs.filter(n => !n.read).length;
+      return sendJson(res, 200, { count: unreadCount, unread_count: unreadCount });
+    }
+
+    // 3. Mark single notification as read (POST, PATCH, or PUT)
+    const singleNotifReadMatch = pathname.match(/^\/api\/notifications\/(\d+)\/read$/);
+    if (singleNotifReadMatch && (req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT')) {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+
+      const notifId = parseInt(singleNotifReadMatch[1], 10);
+      if (isNaN(notifId)) {
+        return sendJson(res, 400, { detail: "Invalid notification ID." });
+      }
+
+      const notif = findNotificationById(notifId);
+      if (!notif) {
+        return sendJson(res, 404, { detail: "Notification not found." });
+      }
+
+      // CRITICAL SECURITY CHECK: Ownership enforcement
+      if (notif.user_id !== user.id) {
+        return sendJson(res, 403, { detail: "Access denied. You cannot modify notifications belonging to another user." });
+      }
+
+      const updated = markNotificationAsRead(notifId, user.id);
+      return sendJson(res, 200, updated);
+    }
+
+    // 4. Mark all notifications as read for current user
+    if (pathname === '/api/notifications/read-all' && (req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT')) {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+
+      const updatedCount = markAllNotificationsAsRead(user.id);
+      return sendJson(res, 200, { success: true, count: updatedCount });
     }
 
     // Not an API route -> pass to next middleware

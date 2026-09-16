@@ -149,6 +149,42 @@ function createInitialSeedData() {
     },
   ];
 
+  const demoNotifications = [
+    {
+      id: 1,
+      user_id: demoPatient.id,
+      type: 'SESSION_SCHEDULED',
+      title: 'Upcoming Therapy Session',
+      message: `You have an upcoming session with ${demoTherapist.name}.`,
+      read: false,
+      created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      related_id: 1,
+      related_type: 'session',
+    },
+    {
+      id: 2,
+      user_id: demoPatient.id,
+      type: 'REPORT_AVAILABLE',
+      title: 'New Progress Report Available',
+      message: 'Your latest wellbeing trend report is ready to view.',
+      read: true,
+      created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      related_id: null,
+      related_type: 'report',
+    },
+    {
+      id: 3,
+      user_id: demoTherapist.id,
+      type: 'SESSION_REMINDER',
+      title: 'Upcoming Session Reminder',
+      message: `Upcoming session with ${demoPatient.name} on your schedule.`,
+      read: false,
+      created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      related_id: 1,
+      related_type: 'session',
+    },
+  ];
+
   return {
     users: [demoPatient, demoTherapist],
     assessments,
@@ -157,6 +193,7 @@ function createInitialSeedData() {
     symptomEntries,
     therapistRelationships: [],
     therapySessions: demoSessions,
+    notifications: demoNotifications,
     counters: {
       nextUserId: 3,
       nextAssessmentId: 3,
@@ -164,6 +201,7 @@ function createInitialSeedData() {
       nextSymptomId: symptomEntries.length + 1,
       nextRelationshipId: 1,
       nextSessionId: 3,
+      nextNotificationId: 4,
     },
   };
 }
@@ -240,6 +278,46 @@ export function getDb() {
         }
         if (!parsed.counters.nextSessionId) {
           parsed.counters.nextSessionId = (parsed.therapySessions.length || 0) + 1;
+        }
+        if (!Array.isArray(parsed.notifications) || parsed.notifications.length === 0) {
+          parsed.notifications = [
+            {
+              id: 1,
+              user_id: 1,
+              type: 'SESSION_SCHEDULED',
+              title: 'Upcoming Therapy Session',
+              message: 'You have an upcoming session with Dr. Sarah Jenkins.',
+              read: false,
+              created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+              related_id: 1,
+              related_type: 'session',
+            },
+            {
+              id: 2,
+              user_id: 1,
+              type: 'REPORT_AVAILABLE',
+              title: 'New Progress Report Available',
+              message: 'Your latest wellbeing trend report is ready to view.',
+              read: true,
+              created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+              related_id: null,
+              related_type: 'report',
+            },
+            {
+              id: 3,
+              user_id: 2,
+              type: 'SESSION_REMINDER',
+              title: 'Upcoming Session Reminder',
+              message: 'Upcoming session with Alex Morgan on your schedule.',
+              read: false,
+              created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+              related_id: 1,
+              related_type: 'session',
+            },
+          ];
+        }
+        if (!parsed.counters.nextNotificationId || parsed.counters.nextNotificationId <= 3) {
+          parsed.counters.nextNotificationId = (parsed.notifications.length || 0) + 1;
         }
         dbMemoryCache = parsed;
         return dbMemoryCache;
@@ -466,4 +544,111 @@ export function updateTherapySession(id, updates) {
   persistDb();
   return session;
 }
+
+// Helper methods for notifications
+export function getNotifications() {
+  const db = getDb();
+  return db.notifications || [];
+}
+
+export function findNotificationById(id) {
+  if (!id) return null;
+  const numId = typeof id === 'number' ? id : parseInt(id, 10);
+  if (isNaN(numId)) return null;
+  const db = getDb();
+  return (db.notifications || []).find(n => n.id === numId) || null;
+}
+
+export function getUserNotifications(userId) {
+  if (!userId) return [];
+  const numId = typeof userId === 'number' ? userId : parseInt(userId, 10);
+  const db = getDb();
+  return (db.notifications || [])
+    .filter(n => n.user_id === numId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+export function createNotification({
+  user_id,
+  type,
+  title,
+  message,
+  related_id = null,
+  related_type = null,
+}) {
+  if (!user_id || !type || !title || !message) {
+    throw new Error('user_id, type, title, and message are required for a notification');
+  }
+
+  const db = getDb();
+  if (!Array.isArray(db.notifications)) {
+    db.notifications = [];
+  }
+  if (!db.counters.nextNotificationId) {
+    db.counters.nextNotificationId = (db.notifications.length || 0) + 1;
+  }
+
+  const newNotif = {
+    id: db.counters.nextNotificationId++,
+    user_id: typeof user_id === 'number' ? user_id : parseInt(user_id, 10),
+    type: String(type).trim().toUpperCase(),
+    title: String(title).trim(),
+    message: String(message).trim(),
+    read: false,
+    created_at: new Date().toISOString(),
+    related_id: related_id !== undefined && related_id !== null ? Number(related_id) : null,
+    related_type: related_type ? String(related_type).trim() : null,
+  };
+
+  db.notifications.push(newNotif);
+  persistDb();
+  return newNotif;
+}
+
+export function markNotificationAsRead(id, userId) {
+  const notif = findNotificationById(id);
+  if (!notif) return null;
+  if (userId !== undefined && userId !== null) {
+    const numUserId = typeof userId === 'number' ? userId : parseInt(userId, 10);
+    if (notif.user_id !== numUserId) {
+      return null; // Not owned by this user
+    }
+  }
+
+  notif.read = true;
+  persistDb();
+  return notif;
+}
+
+export function markAllNotificationsAsRead(userId) {
+  if (!userId) return 0;
+  const numUserId = typeof userId === 'number' ? userId : parseInt(userId, 10);
+  const db = getDb();
+  let updatedCount = 0;
+
+  for (const n of db.notifications || []) {
+    if (n.user_id === numUserId && !n.read) {
+      n.read = true;
+      updatedCount++;
+    }
+  }
+
+  if (updatedCount > 0) {
+    persistDb();
+  }
+  return updatedCount;
+}
+
+export function hasDuplicateNotification({ user_id, type, related_id = null, withinHours = 24 }) {
+  const db = getDb();
+  const numUserId = typeof user_id === 'number' ? user_id : parseInt(user_id, 10);
+  const cutoff = Date.now() - (withinHours * 60 * 60 * 1000);
+
+  return (db.notifications || []).some(n => {
+    if (n.user_id !== numUserId || n.type !== type) return false;
+    if (related_id !== null && n.related_id !== Number(related_id)) return false;
+    return new Date(n.created_at).getTime() >= cutoff;
+  });
+}
+
 

@@ -23,6 +23,7 @@ import PatientProgressPage from './PatientProgressPage.jsx'
 import PatientProgressReportsPage from './PatientProgressReportsPage.jsx'
 import TherapistReportsPage from './TherapistReportsPage.jsx'
 import TherapistSessionsPage from './TherapistSessionsPage.jsx'
+import NotificationsPage from './NotificationsPage.jsx'
 
 const patientActions = [
   'Daily Check-in',
@@ -191,9 +192,10 @@ function PatientDashboard() {
   const [symptoms, setSymptoms] = useState([])
   const [moodTrends, setMoodTrends] = useState([])
   const [aiAnalysis, setAiAnalysis] = useState(null)
+  const [notifications, setNotifications] = useState([])
 
   useEffect(() => {
-    const token = sessionStorage.getItem('access_token')
+    const token = sessionStorage.getItem('access_token') || localStorage.getItem('token')
     if (!token) return
 
     const headers = { Authorization: `Bearer ${token}` }
@@ -227,6 +229,12 @@ function PatientDashboard() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => setAiAnalysis(data))
       .catch(() => setAiAnalysis(null))
+
+    // Fetch notifications
+    fetch(`${API_URL}/api/notifications`, { headers })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setNotifications(Array.isArray(data) ? data : []))
+      .catch(() => setNotifications([]))
   }, [])
 
   const isToday = (dateStr) => {
