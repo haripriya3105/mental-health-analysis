@@ -1,5 +1,11 @@
 import crypto from 'node:crypto';
-import { generateAIAnalysis } from './analysisService.js';
+import {
+  generateAIAnalysis,
+  analyzePatterns,
+  calculateTrendSignals,
+  calculateSymptomTrend,
+  calculateEmotionalDistribution,
+} from './analysisService.js';
 import {
   getDb,
   persistDb,
@@ -998,6 +1004,357 @@ export function createApiMiddleware() {
         symptoms: patientSymptoms,
         assessments: patientAssessments,
         ai_analysis: aiAnalysis,
+      });
+    }
+
+    // ==========================================
+    // Phase 8: Reports and Analytics Endpoints
+    // ==========================================
+
+    // 1. Patient Progress Report (Patient only)
+    if (pathname === '/api/patient/progress-report' && req.method === 'GET') {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'patient') {
+        return sendJson(res, 403, { detail: "Insufficient permissions" });
+      }
+
+      const daysParam = parsedUrl.searchParams.get('days');
+      const days = daysParam ? parseInt(daysParam, 10) : 30;
+      const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+
+      const db = getDb();
+      const allMoods = db.moodEntries.filter(m => m.patient_id === user.id);
+      const filteredMoods = allMoods
+        .filter(m => new Date(m.created_at).getTime() >= cutoff)
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      const allSymptoms = db.symptomEntries.filter(s => s.patient_id === user.id);
+      const filteredSymptoms = allSymptoms
+        .filter(s => new Date(s.created_at).getTime() >= cutoff)
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      const assessments = db.assessments
+        .filter(a => a.patient_id === user.id)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      // Empty state
+      if (allMoods.length === 0) {
+        return sendJson(res, 200, {
+          has_data: false,
+          has_sufficient_data: false,
+          message: "No progress data available yet.",
+          patient: { id: user.id, name: user.name, email: user.email },
+          filter_days: days,
+          total_checkins: 0,
+          filtered_checkins: 0,
+          average_mood: null,
+          average_stress: null,
+          average_energy: null,
+          mood_trend: 'Insufficient data',
+          stress_trend: 'Insufficient data',
+          energy_trend: 'Insufficient data',
+          overall_trend: 'Insufficient data',
+          symptom_trend: 'Insufficient data',
+          mood_over_time: [],
+          symptoms: [],
+          frequent_symptoms: [],
+          symptom_severity_over_time: [],
+          emotional_state_distribution: [],
+          assessments: assessments,
+          latest_assessment: assessments[0] || null,
+          key_patterns: [],
+          recommendations: [],
+          summary: "No progress data available yet.",
+          safety_disclaimer: "AI insights are for informational and wellness purposes only and are not a medical diagnosis.",
+        });
+      }
+
+      const dataForAnalysis = filteredMoods.length >= 2 ? filteredMoods : allMoods;
+      const patterns = analyzePatterns(dataForAnalysis, filteredSymptoms, assessments);
+      const symptomTrend = calculateSymptomTrend(filteredSymptoms.length > 0 ? filteredSymptoms : allSymptoms);
+      const emotionalDist = calculateEmotionalDistribution(filteredMoods.length > 0 ? filteredMoods : allMoods);
+
+      const moodOverTime = (filteredMoods.length > 0 ? filteredMoods : allMoods).map(m => ({
+        id: m.id,
+        date: new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        full_date: new Date(m.created_at).toISOString().slice(0, 10),
+        created_at: m.created_at,
+        mood_score: m.mood_score,
+        stress_level: m.stress_level,
+        energy_level: m.energy_level,
+        emotional_state: m.emotional_state,
+        notes: m.notes,
+      }));
+
+      const symptomSeverityOverTime = (filteredSymptoms.length > 0 ? filteredSymptoms : allSymptoms).map(s => ({
+        id: s.id,
+        date: new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        full_date: new Date(s.created_at).toISOString().slice(0, 10),
+        created_at: s.created_at,
+        name: s.symptom_name,
+        severity: s.severity,
+        notes: s.notes,
+      }));
+
+      let aiResult = null;
+      try {
+        aiResult = await generateAIAnalysis(dataForAnalysis, filteredSymptoms, assessments);
+      } catch {
+        aiResult = patterns;
+      }
+
+      const hasSufficient = filteredMoods.length >= 2;
+
+      return sendJson(res, 200, {
+        has_data: true,
+        has_sufficient_data: hasSufficient,
+        message: hasSufficient ? null : "Not enough historical data to calculate a meaningful report.",
+        patient: { id: user.id, name: user.name, email: user.email },
+        filter_days: days,
+        total_checkins: allMoods.length,
+        filtered_checkins: filteredMoods.length,
+        average_mood: patterns.average_mood,
+        average_stress: patterns.average_stress,
+        average_energy: patterns.average_energy,
+        mood_trend: hasSufficient ? patterns.mood_direction : 'Insufficient data',
+        stress_trend: hasSufficient ? patterns.stress_direction : 'Insufficient data',
+        energy_trend: hasSufficient ? patterns.energy_direction : 'Insufficient data',
+        overall_trend: hasSufficient ? (aiResult?.trend || patterns.trend) : 'Insufficient data',
+        symptom_trend: symptomTrend,
+        mood_over_time: moodOverTime,
+        symptoms: filteredSymptoms,
+        frequent_symptoms: patterns.frequent_symptoms || [],
+        symptom_severity_over_time: symptomSeverityOverTime,
+        emotional_state_distribution: emotionalDist,
+        assessments: assessments,
+        latest_assessment: assessments[0] || null,
+        key_patterns: aiResult?.key_patterns || patterns.key_patterns || [],
+        recommendations: aiResult?.recommendations || patterns.recommendations || [],
+        summary: aiResult?.summary || patterns.summary || "Summary unavailable",
+        safety_disclaimer: "AI insights are for informational and wellness purposes only and are not a medical diagnosis.",
+      });
+    }
+
+    // 2. Therapist Reports List & Practice Analytics (Therapist only)
+    if (pathname === '/api/therapist/reports' && req.method === 'GET') {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'therapist') {
+        return sendJson(res, 403, { detail: "Insufficient permissions" });
+      }
+
+      const db = getDb();
+      const relationships = getRelationships().filter(
+        r => r.therapist_id === user.id && r.status === 'ACCEPTED'
+      );
+
+      const now = Date.now();
+      const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+      const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+
+      let activeCount = 0;
+      let recentCheckinsCount = 0;
+      const allRecentActivity = [];
+
+      const connectedPatients = relationships.map(rel => {
+        const patient = findUserById(rel.patient_id);
+        if (!patient) return null;
+
+        const pMoods = db.moodEntries
+          .filter(m => m.patient_id === patient.id)
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        const pSymptoms = db.symptomEntries
+          .filter(s => s.patient_id === patient.id)
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+        const latestMood = pMoods.length > 0 ? pMoods[pMoods.length - 1] : null;
+        const lastCheckinTime = latestMood ? new Date(latestMood.created_at).getTime() : 0;
+
+        const hasRecentCheckin = lastCheckinTime >= sevenDaysAgo;
+        const isActive = lastCheckinTime >= thirtyDaysAgo;
+
+        if (hasRecentCheckin) recentCheckinsCount++;
+        if (isActive) activeCount++;
+
+        const patterns = analyzePatterns(pMoods, pSymptoms, []);
+        const symptomTrend = calculateSymptomTrend(pSymptoms);
+        const trendSignals = calculateTrendSignals(pMoods, pSymptoms);
+
+        pMoods.slice(-3).forEach(m => {
+          allRecentActivity.push({
+            id: `mood-${m.id}`,
+            patient_id: patient.id,
+            patient_name: patient.name,
+            type: 'check-in',
+            summary: `Mood ${m.mood_score}/10, Stress ${m.stress_level}/10 (${m.emotional_state || 'Check-in'})`,
+            created_at: m.created_at,
+          });
+        });
+
+        return {
+          id: patient.id,
+          name: patient.name,
+          email: patient.email,
+          connected_at: rel.updated_at || rel.created_at,
+          total_checkins: pMoods.length,
+          last_checkin: latestMood ? latestMood.created_at : null,
+          average_mood: patterns.average_mood,
+          average_stress: patterns.average_stress,
+          average_energy: patterns.average_energy,
+          mood_direction: pMoods.length >= 2 ? patterns.mood_direction : 'Insufficient data',
+          stress_direction: pMoods.length >= 2 ? patterns.stress_direction : 'Insufficient data',
+          energy_direction: pMoods.length >= 2 ? patterns.energy_direction : 'Insufficient data',
+          symptom_trend: symptomTrend,
+          overall_trend: pMoods.length >= 2 ? patterns.trend : 'Insufficient data',
+          trend_signals: trendSignals,
+          has_recent_checkin: hasRecentCheckin,
+          is_active: isActive,
+        };
+      }).filter(Boolean);
+
+      allRecentActivity.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      return sendJson(res, 200, {
+        total_connected_patients: connectedPatients.length,
+        active_patients: activeCount,
+        patients_with_recent_checkins: recentCheckinsCount,
+        upcoming_sessions: 0,
+        recent_activity: allRecentActivity.slice(0, 15),
+        patients: connectedPatients,
+      });
+    }
+
+    // 3. Therapist Individual Patient Detailed Report (Therapist only, with strict relationship authorization)
+    if (pathname.startsWith('/api/therapist/reports/') && req.method === 'GET') {
+      const user = getAuthUser(req);
+      if (!user) {
+        return sendJson(res, 401, { detail: "Could not validate credentials" });
+      }
+      if (user.role !== 'therapist') {
+        return sendJson(res, 403, { detail: "Insufficient permissions" });
+      }
+
+      const idPart = pathname.slice('/api/therapist/reports/'.length);
+      const patientId = parseInt(idPart, 10);
+      if (isNaN(patientId)) {
+        return sendJson(res, 400, { detail: "Invalid patient ID" });
+      }
+
+      const patient = findUserById(patientId);
+      if (!patient || patient.role !== 'patient') {
+        return sendJson(res, 404, { detail: "Patient not found" });
+      }
+
+      // CRITICAL SECURITY ENFORCEMENT: Therapist can access ONLY patients with an accepted relationship
+      if (!hasActiveRelationship(patientId, user.id)) {
+        return sendJson(res, 403, {
+          detail: "Access denied. You do not have an active accepted relationship with this patient.",
+        });
+      }
+
+      const daysParam = parsedUrl.searchParams.get('days');
+      const days = daysParam ? parseInt(daysParam, 10) : 30;
+      const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+
+      const db = getDb();
+      const allPatientMoods = db.moodEntries.filter(m => m.patient_id === patientId);
+      const filteredMoods = allPatientMoods
+        .filter(m => new Date(m.created_at).getTime() >= cutoff)
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      const allPatientSymptoms = db.symptomEntries.filter(s => s.patient_id === patientId);
+      const filteredSymptoms = allPatientSymptoms
+        .filter(s => new Date(s.created_at).getTime() >= cutoff)
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      const patientAssessments = db.assessments
+        .filter(a => a.patient_id === patientId)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      const dataForAnalysis = filteredMoods.length >= 2 ? filteredMoods : allPatientMoods;
+      const patterns = analyzePatterns(dataForAnalysis, filteredSymptoms, patientAssessments);
+      const symptomTrend = calculateSymptomTrend(filteredSymptoms.length > 0 ? filteredSymptoms : allPatientSymptoms);
+      const trendSignals = calculateTrendSignals(
+        filteredMoods.length >= 3 ? filteredMoods : allPatientMoods,
+        filteredSymptoms.length >= 2 ? filteredSymptoms : allPatientSymptoms
+      );
+      const emotionalDist = calculateEmotionalDistribution(filteredMoods.length > 0 ? filteredMoods : allPatientMoods);
+
+      const moodTrends = (filteredMoods.length > 0 ? filteredMoods : allPatientMoods).map(m => ({
+        id: m.id,
+        date: new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        full_date: new Date(m.created_at).toISOString().slice(0, 10),
+        created_at: m.created_at,
+        mood_score: m.mood_score,
+        stress_level: m.stress_level,
+        energy_level: m.energy_level,
+        emotional_state: m.emotional_state,
+        notes: m.notes,
+      }));
+
+      const symptomSeverityData = (filteredSymptoms.length > 0 ? filteredSymptoms : allPatientSymptoms).map(s => ({
+        id: s.id,
+        date: new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        full_date: new Date(s.created_at).toISOString().slice(0, 10),
+        name: s.symptom_name,
+        severity: s.severity,
+        notes: s.notes,
+      }));
+
+      const recentCheckins = [...allPatientMoods]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 15);
+
+      let aiResult = null;
+      try {
+        aiResult = await generateAIAnalysis(dataForAnalysis, filteredSymptoms, patientAssessments);
+      } catch {
+        aiResult = patterns;
+      }
+
+      const relationship = findRelationship(patientId, user.id);
+      const hasSufficient = filteredMoods.length >= 2;
+
+      return sendJson(res, 200, {
+        patient: {
+          id: patient.id,
+          name: patient.name,
+          email: patient.email,
+          created_at: patient.created_at,
+          connected_at: relationship ? (relationship.updated_at || relationship.created_at) : null,
+          status: relationship ? relationship.status : null,
+        },
+        filter_days: days,
+        total_checkins: allPatientMoods.length,
+        filtered_checkins: filteredMoods.length,
+        has_sufficient_data: hasSufficient,
+        message: hasSufficient ? null : "Not enough historical data to calculate a meaningful trend.",
+        average_mood: patterns.average_mood,
+        average_stress: patterns.average_stress,
+        average_energy: patterns.average_energy,
+        mood_direction: hasSufficient ? patterns.mood_direction : 'Insufficient data',
+        stress_direction: hasSufficient ? patterns.stress_direction : 'Insufficient data',
+        energy_direction: hasSufficient ? patterns.energy_direction : 'Insufficient data',
+        symptom_trend: symptomTrend,
+        ai_wellbeing_trend: hasSufficient ? (aiResult?.trend || patterns.trend) : 'Insufficient data',
+        ai_progress_summary: aiResult?.summary || patterns.summary,
+        trend_signals: trendSignals,
+        mood_trends: moodTrends,
+        symptom_history: filteredSymptoms,
+        symptom_severity_over_time: symptomSeverityData,
+        frequent_symptoms: patterns.frequent_symptoms || [],
+        emotional_state_distribution: emotionalDist,
+        assessment_history: patientAssessments,
+        latest_assessment: patientAssessments[0] || null,
+        recent_checkins: recentCheckins,
+        recommendations: aiResult?.recommendations || patterns.recommendations || [],
+        key_patterns: aiResult?.key_patterns || patterns.key_patterns || [],
+        safety_disclaimer: "AI insights are for informational and wellness purposes only and are not a medical diagnosis.",
       });
     }
 

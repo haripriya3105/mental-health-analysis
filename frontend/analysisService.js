@@ -487,3 +487,165 @@ CRITICAL RULES:
 
   return baseResult;
 }
+
+/**
+ * Calculate multi-point trend signals for therapists and clinical reports.
+ * STRICTLY NON-DIAGNOSTIC: labeled "Trend signal" (NOT "Diagnosis").
+ * Only triggers if multiple recent data points consistently indicate movement.
+ */
+export function calculateTrendSignals(moodList = [], symptomList = []) {
+  if (!moodList || moodList.length < 3) {
+    return [
+      {
+        type: 'insufficient',
+        title: 'Trend signal',
+        message: 'Insufficient data for a reliable trend signal.',
+      },
+    ];
+  }
+
+  const chronological = [...moodList].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+
+  const signals = [];
+  const recentMoods = chronological.slice(-4);
+
+  // 1. Mood consistently decreasing (at least 3 consecutive points, delta <= -1.5)
+  let moodDecreasing = true;
+  for (let i = 1; i < recentMoods.length; i++) {
+    if (recentMoods[i].mood_score > recentMoods[i - 1].mood_score) {
+      moodDecreasing = false;
+      break;
+    }
+  }
+  const moodDelta = recentMoods[recentMoods.length - 1].mood_score - recentMoods[0].mood_score;
+  if (moodDecreasing && moodDelta <= -1.5) {
+    signals.push({
+      type: 'warning',
+      title: 'Trend signal',
+      message: 'Mood scores show a consistent downward trajectory across consecutive recent check-ins.',
+    });
+  }
+
+  // 2. Stress consistently increasing (at least 3 consecutive points, delta >= 1.5)
+  let stressIncreasing = true;
+  for (let i = 1; i < recentMoods.length; i++) {
+    if (recentMoods[i].stress_level < recentMoods[i - 1].stress_level) {
+      stressIncreasing = false;
+      break;
+    }
+  }
+  const stressDelta = recentMoods[recentMoods.length - 1].stress_level - recentMoods[0].stress_level;
+  if (stressIncreasing && stressDelta >= 1.5) {
+    signals.push({
+      type: 'warning',
+      title: 'Trend signal',
+      message: 'Stress levels have consistently elevated across consecutive recent check-ins.',
+    });
+  }
+
+  // 3. Energy consistently decreasing (at least 3 consecutive points, delta <= -1.5)
+  let energyDecreasing = true;
+  for (let i = 1; i < recentMoods.length; i++) {
+    if (recentMoods[i].energy_level > recentMoods[i - 1].energy_level) {
+      energyDecreasing = false;
+      break;
+    }
+  }
+  const energyDelta = recentMoods[recentMoods.length - 1].energy_level - recentMoods[0].energy_level;
+  if (energyDecreasing && energyDelta <= -1.5) {
+    signals.push({
+      type: 'warning',
+      title: 'Trend signal',
+      message: 'Energy levels have consistently declined across consecutive recent check-ins.',
+    });
+  }
+
+  // 4. Symptom severity increasing across recent records
+  if (symptomList && symptomList.length >= 3) {
+    const chronoSymptoms = [...symptomList].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+    const recentSymptoms = chronoSymptoms.slice(-3);
+    let sympIncreasing = true;
+    for (let i = 1; i < recentSymptoms.length; i++) {
+      if (recentSymptoms[i].severity < recentSymptoms[i - 1].severity) {
+        sympIncreasing = false;
+        break;
+      }
+    }
+    const sympDelta = recentSymptoms[recentSymptoms.length - 1].severity - recentSymptoms[0].severity;
+    if (sympIncreasing && sympDelta >= 2) {
+      signals.push({
+        type: 'warning',
+        title: 'Trend signal',
+        message: 'Symptom severity reports have consistently increased across consecutive logs.',
+      });
+    }
+  }
+
+  // If no warning signals, check for favorable or stable signals
+  if (signals.length === 0) {
+    const moodImproving = moodDelta >= 1.5;
+    const stressRelieved = stressDelta <= -1.5;
+    if (moodImproving || stressRelieved) {
+      signals.push({
+        type: 'positive',
+        title: 'Trend signal',
+        message: 'Favorable upward trajectory in recent wellbeing scores and stress reduction.',
+      });
+    } else {
+      signals.push({
+        type: 'neutral',
+        title: 'Trend signal',
+        message: 'Wellbeing metrics remain stable across recent check-in evaluations.',
+      });
+    }
+  }
+
+  return signals;
+}
+
+/**
+ * Calculate symptom direction / trend.
+ */
+export function calculateSymptomTrend(symptomList = []) {
+  if (!symptomList || symptomList.length < 2) {
+    return 'Insufficient data';
+  }
+  const chronoSymptoms = [...symptomList].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  const mid = Math.floor(chronoSymptoms.length / 2);
+  const earlier = chronoSymptoms.slice(0, mid);
+  const recent = chronoSymptoms.slice(mid);
+
+  const avgEarlier = earlier.reduce((sum, s) => sum + s.severity, 0) / earlier.length;
+  const avgRecent = recent.reduce((sum, s) => sum + s.severity, 0) / recent.length;
+  const delta = avgRecent - avgEarlier;
+
+  if (delta <= -0.5) return 'Improving';
+  if (delta >= 0.5) return 'Worsening';
+  return 'Stable';
+}
+
+/**
+ * Calculate emotional-state distribution breakdown.
+ */
+export function calculateEmotionalDistribution(moodList = []) {
+  if (!moodList || moodList.length === 0) return [];
+  const counts = {};
+  for (const m of moodList) {
+    const state = m.emotional_state || 'Calm';
+    counts[state] = (counts[state] || 0) + 1;
+  }
+  const total = moodList.length;
+  return Object.entries(counts)
+    .map(([state, count]) => ({
+      state,
+      count,
+      percentage: Math.round((count / total) * 100),
+    }))
+    .sort((a, b) => b.count - a.count);
+}

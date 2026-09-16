@@ -116,5 +116,70 @@
 .overview-stat-box strong { display: block; font-size: 1.35rem; color: #087b70; }
 .overview-stat-box span { font-size: 0.78rem; color: #6f8d8f; }
 
+/* Reports & Printing Styles */
+.reports-container { width: 100%; }
+.screen-hidden { display: none; }
+.print-modal-active {
+  display: block;
+  position: relative;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(18, 63, 67, 0.08);
+  border: 1px solid #dcece8;
+  padding: 30px;
+  margin-bottom: 24px;
+}
+.printable-report-card { width: 100%; max-width: 900px; margin: 0 auto; background: #fff; }
+.formal-report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.report-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.report-section {
+  margin-bottom: 18px;
+}
+
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .sidebar,
+  .topbar,
+  .screen-only,
+  .filter-tabs,
+  .primary-button,
+  .secondary-button,
+  .text-button {
+    display: none !important;
+  }
+  .content-area,
+  .dashboard-content,
+  .reports-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+  .printable-report-wrapper {
+    display: block !important;
+    position: static !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+  .printable-report-card {
+    max-width: 100% !important;
+  }
+}
+
+
 
 

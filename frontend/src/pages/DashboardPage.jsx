@@ -20,6 +20,8 @@ import AIInsightsPage from './AIInsightsPage.jsx'
 import PatientTherapyPage from './PatientTherapyPage.jsx'
 import TherapistPatientsPage from './TherapistPatientsPage.jsx'
 import PatientProgressPage from './PatientProgressPage.jsx'
+import PatientProgressReportsPage from './PatientProgressReportsPage.jsx'
+import TherapistReportsPage from './TherapistReportsPage.jsx'
 
 const patientActions = [
   'Daily Check-in',
@@ -58,7 +60,7 @@ function PlaceholderChart({ title, message }) {
   )
 }
 
-function QuickActions({ actions, onAssessment, onCheckIn, onInsights, onViewPatients }) {
+function QuickActions({ actions, onAssessment, onCheckIn, onInsights, onViewPatients, onViewReports }) {
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -127,6 +129,22 @@ function QuickActions({ actions, onAssessment, onCheckIn, onInsights, onViewPati
               >
                 <span className="action-icon" aria-hidden="true">
                   👥
+                </span>
+                <span>{action}</span>
+                <small>Available now</small>
+              </button>
+            )
+          }
+          if (action === 'View Reports') {
+            return (
+              <button
+                id="action-view-reports"
+                className="action-card enabled-action"
+                key={action}
+                onClick={onViewReports}
+              >
+                <span className="action-icon" aria-hidden="true">
+                  📊
                 </span>
                 <span>{action}</span>
                 <small>Available now</small>
@@ -271,6 +289,40 @@ function PatientDashboard() {
           value={symptomsValue}
           detail={symptomsDetail}
         />
+      </section>
+
+      {/* 30-Day Wellbeing Progress Summary Card */}
+      <section className="panel" style={{ marginBottom: 20 }}>
+        <div className="panel-heading">
+          <div>
+            <h2>Your 30-day wellbeing progress</h2>
+            <p>Recent self-reported averages and trajectory.</p>
+          </div>
+          <button
+            id="dashboard-view-progress-report-btn"
+            className="primary-button compact-button"
+            onClick={() => navigate('/patient/progress-reports')}
+          >
+            View Progress Report →
+          </button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+          <div style={{ padding: '12px 14px', background: '#f5faf9', border: '1px solid #e1eeeb', borderRadius: 10, textAlign: 'center' }}>
+            <small style={{ display: 'block', fontSize: '0.74rem', color: '#597b7d', fontWeight: 700, textTransform: 'uppercase' }}>Mood</small>
+            <strong style={{ display: 'block', fontSize: '1.25rem', color: '#087b70', marginTop: 3 }}>{moodValue}</strong>
+            <span style={{ fontSize: '0.78rem', color: '#688486' }}>1-10 Scale</span>
+          </div>
+          <div style={{ padding: '12px 14px', background: '#f5faf9', border: '1px solid #e1eeeb', borderRadius: 10, textAlign: 'center' }}>
+            <small style={{ display: 'block', fontSize: '0.74rem', color: '#597b7d', fontWeight: 700, textTransform: 'uppercase' }}>Stress</small>
+            <strong style={{ display: 'block', fontSize: '1.25rem', color: '#b56317', marginTop: 3 }}>{stressValue}</strong>
+            <span style={{ fontSize: '0.78rem', color: '#688486' }}>1-10 Scale</span>
+          </div>
+          <div style={{ padding: '12px 14px', background: '#f5faf9', border: '1px solid #e1eeeb', borderRadius: 10, textAlign: 'center' }}>
+            <small style={{ display: 'block', fontSize: '0.74rem', color: '#597b7d', fontWeight: 700, textTransform: 'uppercase' }}>Energy</small>
+            <strong style={{ display: 'block', fontSize: '1.25rem', color: '#1e7399', marginTop: 3 }}>{energyValue}</strong>
+            <span style={{ fontSize: '0.78rem', color: '#688486' }}>1-10 Scale</span>
+          </div>
+        </div>
       </section>
 
       {/* AI Insights Card */}
@@ -642,7 +694,34 @@ function TherapistDashboard() {
       <QuickActions
         actions={therapistActions}
         onViewPatients={() => navigate('/therapist/patients')}
+        onViewReports={() => navigate('/therapist/reports')}
       />
+
+      {/* Patient Progress & Reports Section */}
+      <section className="panel" style={{ marginBottom: 20 }}>
+        <div className="panel-heading">
+          <div>
+            <h2>Patient Progress & Reports</h2>
+            <p>Access longitudinal clinical analytics, trend signals, and verified patient directories.</p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <button
+            id="therapist-nav-my-patients-btn"
+            className="primary-button compact-button"
+            onClick={() => navigate('/therapist/patients')}
+          >
+            👥 My Patients Directory
+          </button>
+          <button
+            id="therapist-nav-reports-btn"
+            className="secondary-button compact-button"
+            onClick={() => navigate('/therapist/reports')}
+          >
+            📊 Clinical Reports & Analytics
+          </button>
+        </div>
+      </section>
 
       {/* Pending Connection Requests Alert */}
       {pendingRequests.length > 0 && (
@@ -818,11 +897,20 @@ export default function DashboardPage({ role }) {
     (location.pathname === '/patient/ai-insights' ||
       location.pathname === '/patient/insights')
   const isTherapy = role === 'patient' && location.pathname === '/patient/therapy'
+  const isPatientReports =
+    role === 'patient' &&
+    (location.pathname === '/patient/progress-reports' ||
+      location.pathname === '/patient/reports' ||
+      location.pathname === '/patient/progress')
 
   const isPatients =
     role === 'therapist' &&
     (location.pathname === '/therapist/patients' ||
       location.pathname === '/therapist/my-patients')
+  const isTherapistReports =
+    role === 'therapist' &&
+    (location.pathname === '/therapist/reports' ||
+      location.pathname === '/therapist/progress-reports')
   const isPatientProgress =
     role === 'therapist' && location.pathname.startsWith('/therapist/patients/')
   const patientProgressId = isPatientProgress
@@ -865,10 +953,14 @@ export default function DashboardPage({ role }) {
             <AIInsightsPage />
           ) : isTherapy ? (
             <PatientTherapyPage />
+          ) : isPatientReports ? (
+            <PatientProgressReportsPage />
           ) : isPatientProgress ? (
             <PatientProgressPage patientId={patientProgressId} />
           ) : isPatients ? (
             <TherapistPatientsPage />
+          ) : isTherapistReports ? (
+            <TherapistReportsPage />
           ) : isDashboard ? (
             role === 'patient' ? (
               <PatientDashboard />

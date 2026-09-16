@@ -23,6 +23,22 @@
       "password_hash": "1adf1f8375ed601e659408d2360b9606:eec3cf54a8475a9bb49f77b9362006c86ccab25c3f5d6d97d1f2422ce31e058542190eb7966968c5efc3678b0640b1e8ed48f547aed379023b1d85bbf2d35637",
       "role": "patient",
       "created_at": "2026-09-15T16:34:22.653Z"
+    },
+    {
+      "id": 4,
+      "name": "Empty State Patient",
+      "email": "newpatient_1789570461994@example.com",
+      "password_hash": "4d941dbe215aff3b05e97918bec501ee:b2a7be1aa045b4fea76c0d68472094942da9d704ed705ce6747e8147bb39cc6bedef6435f0fa786963c1813c30b06e189b967cba796c92afd8c2a31b53fe8de9",
+      "role": "patient",
+      "created_at": "2026-09-16T14:54:22.068Z"
+    },
+    {
+      "id": 5,
+      "name": "Empty State Patient",
+      "email": "newpatient_1789570478332@example.com",
+      "password_hash": "9c017181ada6674c22bdfa7384eb9493:8b74a8c5a99c4abf12ce56e0f0c1d25b020e0a70dee7552c6639bf0cd66b9cf6668d085512bf420513fe1f1e69cf297f9fa703f660cb8101070675eaaaabf5db",
+      "role": "patient",
+      "created_at": "2026-09-16T14:54:38.389Z"
     }
   ],
   "assessments": [
@@ -133,7 +149,7 @@
     }
   ],
   "counters": {
-    "nextUserId": 4,
+    "nextUserId": 6,
     "nextAssessmentId": 3,
     "nextMoodId": 8,
     "nextSymptomId": 3,
