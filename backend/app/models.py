@@ -18,6 +18,8 @@ class User(Base):
     patient_profile: Mapped["PatientProfile | None"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     therapist_profile: Mapped["TherapistProfile | None"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     assessments: Mapped[list["Assessment"]] = relationship(back_populates="patient", cascade="all, delete-orphan")
+    mood_entries: Mapped[list["MoodEntry"]] = relationship(back_populates="patient", cascade="all, delete-orphan")
+    symptom_entries: Mapped[list["SymptomEntry"]] = relationship(back_populates="patient", cascade="all, delete-orphan")
 class PatientProfile(Base):
     __tablename__ = "patient_profiles"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -67,3 +69,25 @@ class AssessmentAnswer(Base):
     answer_value: Mapped[int] = mapped_column(Integer, nullable=False)
     assessment: Mapped[Assessment] = relationship(back_populates="answers")
     question: Mapped[AssessmentQuestion] = relationship(back_populates="answers")
+
+class MoodEntry(Base):
+    __tablename__ = "mood_entries"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    mood_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    stress_level: Mapped[int] = mapped_column(Integer, nullable=False)
+    energy_level: Mapped[int] = mapped_column(Integer, nullable=False)
+    emotional_state: Mapped[str] = mapped_column(String(50), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    patient: Mapped[User] = relationship(back_populates="mood_entries")
+
+class SymptomEntry(Base):
+    __tablename__ = "symptom_entries"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    symptom_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    severity: Mapped[int] = mapped_column(Integer, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    patient: Mapped[User] = relationship(back_populates="symptom_entries")

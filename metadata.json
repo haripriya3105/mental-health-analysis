@@ -1,0 +1,6 @@
+{
+  "name": "AI-Powered Mental Health Analysis",
+  "description": "AI-Powered Mental Health Analysis platform featuring patient self-assessments, wellbeing metrics, and therapist workspaces.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

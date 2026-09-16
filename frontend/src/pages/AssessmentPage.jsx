@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+const API_URL = import.meta.env.VITE_API_URL || ''
 const DISCLAIMER = 'Assessment results are not a medical diagnosis. They are intended only to help users understand general wellness patterns. Please consult a qualified mental health professional for clinical concerns.'
 const OPTIONS = [['0', 'Not at all'], ['1', 'Several days'], ['2', 'More than half the days'], ['3', 'Nearly every day']]
 

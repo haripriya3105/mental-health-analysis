@@ -1,0 +1,16 @@
+{
+  "name": "ai-powered-mental-health-analysis",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm --prefix frontend run dev -- --host 0.0.0.0 --port 3000",
+    "build": "npm --prefix frontend run build && cp -r frontend/dist dist"
+  },
+  "dependencies": {
+    "@google/genai": "^2.22.0"
+  }
+}

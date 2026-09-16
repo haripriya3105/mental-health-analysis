@@ -4,6 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import Base, engine
 from app.routers.auth import router as auth_router
 from app.routers.assessment import router as assessment_router
+from app.routers.mood import router as mood_router
+from app.routers.symptoms import router as symptoms_router
+from app.routers.analysis import router as analysis_router
 from app.database import SessionLocal
 from app.assessment_seed import seed_assessment_questions
 
@@ -15,6 +18,9 @@ with SessionLocal() as db:
     seed_assessment_questions(db)
 app.include_router(auth_router)
 app.include_router(assessment_router)
+app.include_router(mood_router)
+app.include_router(symptoms_router)
+app.include_router(analysis_router)
 
 
 @app.get("/health")

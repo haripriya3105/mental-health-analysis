@@ -1,0 +1,152 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "name": "Alex Morgan",
+      "email": "demo@patient.com",
+      "password_hash": "759e2135e6a5bf7b7e312b8f77cb9c64:cd657d121323333f27996728808473746fd86e7f8439f36d924bebced3a54da978fd50c9584cccfd8c14109f7989aee1299ac88424a3a0c936fddff763f1e109",
+      "role": "patient",
+      "created_at": "2026-09-01T16:32:52.185Z"
+    },
+    {
+      "id": 2,
+      "name": "Dr. Sarah Jenkins",
+      "email": "demo@therapist.com",
+      "password_hash": "ad1df031ce83e3ca284e96bc3f7f261b:40673565ff38cf309674e690bdf9cfaab0dae67abdef8b3f535af1d2e45b5863f9d3658afebdd60f245ef7539b73fc2fce80ab762fcbdb4e577939481e0a7cbe",
+      "role": "therapist",
+      "created_at": "2026-08-16T16:32:52.266Z"
+    },
+    {
+      "id": 3,
+      "name": "Test Patient 1789490062453",
+      "email": "patient_verify_1789490062453@example.com",
+      "password_hash": "1adf1f8375ed601e659408d2360b9606:eec3cf54a8475a9bb49f77b9362006c86ccab25c3f5d6d97d1f2422ce31e058542190eb7966968c5efc3678b0640b1e8ed48f547aed379023b1d85bbf2d35637",
+      "role": "patient",
+      "created_at": "2026-09-15T16:34:22.653Z"
+    }
+  ],
+  "assessments": [
+    {
+      "id": 1,
+      "patient_id": 1,
+      "total_score": 9,
+      "result_category": "MILD CONCERN",
+      "created_at": "2026-09-08T16:32:52.266Z"
+    },
+    {
+      "id": 2,
+      "patient_id": 1,
+      "total_score": 5,
+      "result_category": "LOWER CONCERN",
+      "created_at": "2026-09-15T16:32:52.266Z"
+    }
+  ],
+  "assessmentAnswers": [],
+  "moodEntries": [
+    {
+      "id": 1,
+      "patient_id": 1,
+      "mood_score": 6,
+      "stress_level": 7,
+      "energy_level": 5,
+      "emotional_state": "Anxious",
+      "notes": "Busy week at work, feeling some tension.",
+      "created_at": "2026-09-05T16:32:52.266Z"
+    },
+    {
+      "id": 2,
+      "patient_id": 1,
+      "mood_score": 5,
+      "stress_level": 8,
+      "energy_level": 4,
+      "emotional_state": "Tired",
+      "notes": "Did not sleep well last night.",
+      "created_at": "2026-09-07T16:32:52.266Z"
+    },
+    {
+      "id": 3,
+      "patient_id": 1,
+      "mood_score": 7,
+      "stress_level": 5,
+      "energy_level": 6,
+      "emotional_state": "Calm",
+      "notes": "Took an evening walk, helped reset.",
+      "created_at": "2026-09-09T16:32:52.266Z"
+    },
+    {
+      "id": 4,
+      "patient_id": 1,
+      "mood_score": 7,
+      "stress_level": 6,
+      "energy_level": 7,
+      "emotional_state": "Neutral",
+      "notes": "Focused on routine and hydration.",
+      "created_at": "2026-09-11T16:32:52.266Z"
+    },
+    {
+      "id": 5,
+      "patient_id": 1,
+      "mood_score": 8,
+      "stress_level": 4,
+      "energy_level": 7,
+      "emotional_state": "Calm",
+      "notes": "Had a restful weekend.",
+      "created_at": "2026-09-12T16:32:52.266Z"
+    },
+    {
+      "id": 6,
+      "patient_id": 1,
+      "mood_score": 8,
+      "stress_level": 3,
+      "energy_level": 8,
+      "emotional_state": "Happy",
+      "notes": "Connected with a good friend.",
+      "created_at": "2026-09-14T16:32:52.266Z"
+    },
+    {
+      "id": 7,
+      "patient_id": 1,
+      "mood_score": 7,
+      "stress_level": 4,
+      "energy_level": 7,
+      "emotional_state": "Calm",
+      "notes": "Morning check-in: feeling grounded and ready.",
+      "created_at": "2026-09-15T16:32:52.266Z"
+    }
+  ],
+  "symptomEntries": [
+    {
+      "id": 1,
+      "patient_id": 1,
+      "symptom_name": "Fatigue",
+      "severity": 6,
+      "notes": "Afternoon tiredness despite having coffee.",
+      "created_at": "2026-09-12T16:32:52.266Z"
+    },
+    {
+      "id": 2,
+      "patient_id": 1,
+      "symptom_name": "Muscle tension in neck & shoulders",
+      "severity": 5,
+      "notes": "Noticed while working at desk.",
+      "created_at": "2026-09-14T16:32:52.266Z"
+    }
+  ],
+  "counters": {
+    "nextUserId": 4,
+    "nextAssessmentId": 3,
+    "nextMoodId": 8,
+    "nextSymptomId": 3,
+    "nextRelationshipId": 2
+  },
+  "therapistRelationships": [
+    {
+      "id": 1,
+      "patient_id": 1,
+      "therapist_id": 2,
+      "status": "ACCEPTED",
+      "created_at": "2026-09-16T14:44:48.716Z",
+      "updated_at": "2026-09-16T14:44:48.725Z"
+    }
+  ]
+}

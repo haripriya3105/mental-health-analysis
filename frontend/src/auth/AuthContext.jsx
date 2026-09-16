@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 const AuthContext = createContext(null)
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+const API_URL = import.meta.env.VITE_API_URL || ''
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null); const [loading, setLoading] = useState(true)
   const fetchCurrentUser = async (token) => { const response = await fetch(`${API_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } }); if (!response.ok) throw new Error('Your session has expired. Please sign in again.'); const currentUser = await response.json(); setUser(currentUser); return currentUser }
